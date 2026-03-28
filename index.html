@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Workforce Calculator | Agent Requirement</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #eef2f5; padding: 20px; min-height: 100vh; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); border-radius: 20px; padding: 20px 25px; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid rgba(160,90,255,0.2); }
+        .header h1 { color: #2d3a45; font-size: 1.8em; font-weight: 600; }
+        .header h1 span { color: #A05AFF; font-size: 0.5em; background: rgba(160,90,255,0.1); padding: 4px 10px; border-radius: 20px; margin-left: 10px; font-weight: 500; }
+        .header p { color: #6B7A8D; margin-top: 8px; }
+        
+        .sheet-url-input { background: white; border-radius: 20px; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .sheet-url-input input { flex: 1; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 0.9rem; }
+        .btn-load { background: #A05AFF; color: white; border: none; padding: 12px 25px; border-radius: 40px; font-weight: 600; cursor: pointer; }
+        .btn-load:hover { background: #8A3FE0; }
+        
+        .controls { background: white; border-radius: 20px; padding: 20px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; }
+        .control-group { display: flex; flex-direction: column; gap: 8px; }
+        .control-group label { font-weight: 600; font-size: 0.8rem; color: #64748b; text-transform: uppercase; }
+        .control-group input, .control-group select { padding: 10px 15px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 1rem; min-width: 150px; }
+        .btn-calc { background: #A05AFF; color: white; border: none; padding: 10px 25px; border-radius: 40px; font-weight: 600; cursor: pointer; }
+        .btn-calc:hover { background: #8A3FE0; }
+        
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 25px; }
+        .kpi-card { background: white; border-radius: 20px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-top: 4px solid #A05AFF; }
+        .kpi-value { font-size: 2.5rem; font-weight: 700; color: #2d3a45; }
+        .kpi-label { color: #64748b; font-size: 0.85rem; margin-top: 5px; }
+        
+        .results { background: white; border-radius: 20px; padding: 20px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .results h3 { margin-bottom: 15px; color: #2d3a45; }
+        
+        .chart-container { background: white; border-radius: 20px; padding: 20px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        canvas { max-height: 400px; }
+        
+        .table-container { background: white; border-radius: 20px; padding: 20px; overflow-x: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        th { padding: 8px; background: #F5F7FA; position: sticky; top: 0; font-weight: 600; }
+        td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; }
+        .peak-hour { background: #FEF3C7; }
+        .loading { text-align: center; padding: 40px; color: #64748b; }
+        .error { background: #FEE2E2; color: #991B1B; padding: 15px; border-radius: 12px; margin-bottom: 20px; }
+        .success { background: #D1FAE5; color: #065F46; padding: 15px; border-radius: 12px; margin-bottom: 20px; }
+        .footer { text-align: center; margin-top: 30px; color: #64748b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Workforce Calculator <span>Agent Requirement</span></h1>
+            <p>Paste your Google Sheet CSV URL with client's requirement table (Date, Required, Time Slots, and daily numbers)</p>
+        </div>
+
+        <div class="sheet-url-input">
+            <input type="text" id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/e/2PACX-1vRGdRl7urFAvG8ypwb8IILX1G4wQ7LeNJJcnVc8bLbY-R-m1Oq8KH1saZsfZlqF37R1mETWHkYAa8wh/pub?output=csv" value="">
+            <button class="btn-load" id="loadBtn">📥 Load Requirements</button>
+        </div>
+
+        <div id="dataStatus"></div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>⏰ Shift Length (hours)</label>
+                <input type="number" id="shiftHours" value="9" step="0.5" min="4" max="12">
+            </div>
+            <div class="control-group">
+                <label>📅 Days Off per Week</label>
+                <select id="daysOff">
+                    <option value="0">0 days (7 days/week)</option>
+                    <option value="1">1 day (6 days/week)</option>
+                    <option value="2" selected>2 days (5 days/week)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>🏖️ Specific Day(s) Off</label>
+                <select id="specificDaysOff">
+                    <option value="none">None (standard calculation)</option>
+                    <option value="fri-sat">Friday & Saturday</option>
+                    <option value="sat-sun">Saturday & Sunday</option>
+                    <option value="fri">Friday only</option>
+                    <option value="sun">Sunday only</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <button class="btn-calc" id="calculateBtn">📊 Calculate</button>
+            </div>
+        </div>
+
+        <div class="kpi-grid" id="kpiGrid">
+            <div class="kpi-card"><div class="kpi-value">—</div><div class="kpi-label">Total Required Hours/Week</div></div>
+            <div class="kpi-card"><div class="kpi-value">—</div><div class="kpi-label">Hours/Agent/Week</div></div>
+            <div class="kpi-card"><div class="kpi-value">—</div><div class="kpi-label">Peak Hour Requirement</div></div>
+            <div class="kpi-card"><div class="kpi-value">—</div><div class="kpi-label">Working Days/Week</div></div>
+        </div>
+
+        <div class="results" id="resultsSection">
+            <h3>📋 Summary</h3>
+            <div id="summaryText">Load requirements from Google Sheet first</div>
+        </div>
+
+        <div class="chart-container">
+            <h3>📈 Hourly Requirement by Day</h3>
+            <canvas id="requirementChart"></canvas>
+        </div>
+
+        <div class="table-container">
+            <h3>📋 Detailed Time-Slot Requirements</h3>
+            <div id="tableContainer">Load data to view requirements</div>
+        </div>
+
+        <div class="footer">
+            <p>Update Google Sheet weekly/monthly | Calculator automatically uses latest data | Format must match client's table</p>
+        </div>
+    </div>
+
+    <script>
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz32sowAxDQosCoO29lMhBVRNFuC1_qpaMh_Y_fJ0YTSAvPAfov7MdTAARzGyV3mHQ72A/exec';
+        
+        let requirementData = {};
+        let timeSlots = [];
+        let days = [];
+        let dayShort = [];
+        let chart;
+
+        async function loadRequirements() {
+            const csvUrl = document.getElementById('sheetUrl').value;
+            if (!csvUrl) {
+                showStatus('Please enter a Google Sheets CSV URL', 'error');
+                return;
+            }
+            
+            showStatus('Loading requirements from Google Sheet...', 'loading');
+            
+            try {
+                const fullUrl = APPS_SCRIPT_URL + '?url=' + encodeURIComponent(csvUrl + '&_=' + new Date().getTime());
+                const response = await fetch(fullUrl);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const csvText = await response.text();
+                
+                // Parse CSV
+                const rows = csvText.split(/\r?\n/).filter(row => row.trim() !== '');
+                const parsedRows = rows.map(row => {
+                    const matches = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+                    if (matches) return matches.map(cell => cell.replace(/^"|"$/g, '').trim());
+                    return row.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''));
+                });
+                
+                if (parsedRows.length < 3) throw new Error('Not enough data in sheet');
+                
+                // Row 0: Dates (first cell is "Date", then dates)
+                // Row 1: Day names (first cell is "Required", then Mon, Tue, etc.)
+                // Row 2+: Time slots and numbers
+                
+                const dateRow = parsedRows[0];
+                const dayRow = parsedRows[1];
+                
+                // Get days (from column 1 onwards)
+                days = [];
+                dayShort = [];
+                for (let i = 1; i < dayRow.length; i++) {
+                    if (dayRow[i]) {
+                        dayShort.push(dayRow[i]);
+                        days.push(dayRow[i]);
+                    }
+                }
+                
+                console.log('Days found:', days);
+                
+                // Initialize requirement data
+                requirementData = {};
+                days.forEach(day => {
+                    requirementData[day] = [];
+                });
+                
+                // Parse time slots and numbers
+                timeSlots = [];
+                for (let i = 2; i < parsedRows.length; i++) {
+                    const row = parsedRows[i];
+                    if (!row[0]) continue;
+                    
+                    timeSlots.push(row[0]);
+                    
+                    for (let j = 0; j < days.length; j++) {
+                        const value = parseInt(row[j + 1]) || 0;
+                        requirementData[days[j]].push(value);
+                    }
+                }
+                
+                showStatus(`✅ Loaded ${timeSlots.length} time slots for ${days.length} days`, 'success');
+                calculate();
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus('Failed to load data: ' + error.message, 'error');
+            }
+        }
+        
+        function showStatus(msg, type) {
+            const statusDiv = document.getElementById('dataStatus');
+            statusDiv.innerHTML = `<div class="${type}" style="padding: 12px; border-radius: 12px; margin-bottom: 15px;">${msg}</div>`;
+            setTimeout(() => {
+                if (statusDiv.innerHTML.includes(msg)) {
+                    setTimeout(() => { statusDiv.innerHTML = ''; }, 3000);
+                }
+            }, 5000);
+        }
+        
+        function calculate() {
+            if (Object.keys(requirementData).length === 0 || days.length === 0) {
+                document.getElementById('summaryText').innerHTML = 'Please load requirements from Google Sheet first';
+                return;
+            }
+            
+            const shiftHours = parseFloat(document.getElementById('shiftHours').value);
+            const daysOffType = document.getElementById('daysOff').value;
+            const specificDays = document.getElementById('specificDaysOff').value;
+            
+            let workingDays = 7 - parseInt(daysOffType);
+            let dayMultipliers = {};
+            days.forEach(day => { dayMultipliers[day] = 1; });
+            
+            if (specificDays === 'fri-sat') {
+                dayMultipliers['Fri'] = 0;
+                dayMultipliers['Sat'] = 0;
+                workingDays = 5;
+            } else if (specificDays === 'sat-sun') {
+                dayMultipliers['Sat'] = 0;
+                dayMultipliers['Sun'] = 0;
+                workingDays = 5;
+            } else if (specificDays === 'fri') {
+                dayMultipliers['Fri'] = 0;
+                workingDays = 6;
+            } else if (specificDays === 'sun') {
+                dayMultipliers['Sun'] = 0;
+                workingDays = 6;
+            }
+            
+            // Calculate totals
+            let totalRequiredHours = 0;
+            let peakRequirement = 0;
+            let hourlyPeaks = {};
+            
+            days.forEach(day => {
+                if (dayMultipliers[day] === 0) return;
+                const requirements = requirementData[day];
+                if (!requirements) return;
+                for (let i = 0; i < requirements.length; i++) {
+                    const req = requirements[i];
+                    totalRequiredHours += req * 0.5; // 30 minutes per slot
+                    if (req > peakRequirement) peakRequirement = req;
+                    const slotTime = timeSlots[i];
+                    if (!hourlyPeaks[slotTime]) hourlyPeaks[slotTime] = 0;
+                    hourlyPeaks[slotTime] = Math.max(hourlyPeaks[slotTime], req);
+                }
+            });
+            
+            const availableHoursPerAgentPerWeek = shiftHours * workingDays;
+            const agentsNeeded = Math.ceil(totalRequiredHours / availableHoursPerAgentPerWeek);
+            const agentsNeededByPeak = Math.ceil(peakRequirement * (7 / workingDays));
+            const recommended = Math.max(agentsNeeded, agentsNeededByPeak);
+            
+            // Update KPI cards
+            document.getElementById('kpiGrid').innerHTML = `
+                <div class="kpi-card"><div class="kpi-value">${totalRequiredHours.toFixed(0)}</div><div class="kpi-label">Total Required Hours/Week</div></div>
+                <div class="kpi-card"><div class="kpi-value">${availableHoursPerAgentPerWeek}</div><div class="kpi-label">Hours/Agent/Week</div></div>
+                <div class="kpi-card"><div class="kpi-value">${peakRequirement}</div><div class="kpi-label">Peak Hour Requirement</div></div>
+                <div class="kpi-card"><div class="kpi-value">${workingDays}</div><div class="kpi-label">Working Days/Week</div></div>
+            `;
+            
+            document.getElementById('summaryText').innerHTML = `
+                <div style="display: flex; gap: 30px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <div><span style="font-size: 3rem; font-weight: 700; color: #A05AFF;">${agentsNeeded}</span><br>Agents Needed (by total hours)</div>
+                    <div><span style="font-size: 3rem; font-weight: 700; color: #1BCFB4;">${agentsNeededByPeak}</span><br>Agents Needed (by peak coverage)</div>
+                    <div><span style="font-size: 2rem;">🎯 <strong>${recommended}</strong> agents recommended</span></div>
+                </div>
+                <div style="padding: 15px; background: #F5F7FA; border-radius: 16px;">
+                    <strong>📌 Calculation Details:</strong><br>
+                    • Total required man-hours per week: ${totalRequiredHours.toFixed(0)} hours<br>
+                    • Each agent works ${shiftHours} hours/day × ${workingDays} days = ${availableHoursPerAgentPerWeek} hours/week<br>
+                    • Agents needed (hours method): ${totalRequiredHours.toFixed(0)} ÷ ${availableHoursPerAgentPerWeek} = ${agentsNeeded}<br>
+                    • Peak requirement: ${peakRequirement} agents needed at peak hour<br>
+                    • Recommended: ${recommended} agents to cover both total hours and peak demand
+                </div>
+            `;
+            
+            updateChart(dayMultipliers);
+            updateTable(dayMultipliers);
+        }
+        
+        function updateChart(dayMultipliers) {
+            const ctx = document.getElementById('requirementChart').getContext('2d');
+            if (chart) chart.destroy();
+            
+            const datasets = [];
+            const colors = ['#A05AFF', '#1BCFB4', '#FE9496', '#4BCBEB', '#F59E0B', '#10B981', '#EF4444'];
+            
+            days.forEach((day, idx) => {
+                if (dayMultipliers[day] === 0) return;
+                const data = requirementData[day];
+                if (!data) return;
+                datasets.push({
+                    label: day,
+                    data: data,
+                    borderColor: colors[idx % colors.length],
+                    backgroundColor: colors[idx % colors.length] + '40',
+                    tension: 0.3,
+                    fill: false,
+                    pointRadius: 2,
+                    pointHoverRadius: 5
+                });
+            });
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: timeSlots, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.raw + ' agents'; } } },
+                        legend: { position: 'top' }
+                    },
+                    scales: {
+                        x: { ticks: { maxRotation: 45, minRotation: 45, font: { size: 8 } } },
+                        y: { beginAtZero: true, title: { display: true, text: 'Agents Required' }, ticks: { stepSize: 2 } }
+                    }
+                }
+            });
+        }
+        
+        function updateTable(dayMultipliers) {
+            const container = document.getElementById('tableContainer');
+            if (timeSlots.length === 0) {
+                container.innerHTML = 'No data loaded';
+                return;
+            }
+            
+            let html = '能<table><thead><tr><th>Time Slot</th>';
+            days.forEach(day => {
+                if (dayMultipliers[day] !== 0) html += `<th>${day}</th>`;
+            });
+            html += '<th>Peak</th></tr></thead><tbody>';
+            
+            for (let i = 0; i < timeSlots.length; i++) {
+                html += `<tr><td style="font-weight: 500;">${timeSlots[i]}</td>`;
+                let maxVal = 0;
+                days.forEach(day => {
+                    if (dayMultipliers[day] !== 0) {
+                        const val = requirementData[day] ? requirementData[day][i] : 0;
+                        html += `<td>${val}</td>`;
+                        if (val > maxVal) maxVal = val;
+                    }
+                });
+                const isPeak = maxVal >= 8;
+                html += `<td style="background: ${isPeak ? '#FEF3C7' : 'transparent'}; font-weight: bold;">${maxVal}</td>`;
+                html += `</tr>`;
+            }
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+        
+        document.getElementById('loadBtn').addEventListener('click', loadRequirements);
+        document.getElementById('calculateBtn').addEventListener('click', calculate);
+        
+        // Load sample data on page load for demo
+        window.onload = function() {
+            // You'll replace this with your actual published CSV URL
+            document.getElementById('sheetUrl').value = '';
+        };
+    </script>
+</body>
+</html>
