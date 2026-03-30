@@ -46,6 +46,7 @@
         .error { background: #FEE2E2; color: #991B1B; padding: 15px; border-radius: 12px; margin-bottom: 20px; }
         .success { background: #D1FAE5; color: #065F46; padding: 15px; border-radius: 12px; margin-bottom: 20px; }
         .footer { text-align: center; margin-top: 30px; color: #64748b; }
+        .shrinkage-badge { background: #FEF3C7; color: #D97706; padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; margin-left: 10px; }
     </style>
 </head>
 <body>
@@ -56,7 +57,7 @@
         </div>
 
         <div class="sheet-url-input">
-            <input type="text" id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/e/2PACX-1vRGdRl7urFAvG8ypwb8IILX1G4wQ7LeNJJcnVc8bLbY-R-m1Oq8KH1saZsfZlqF37R1mETWHkYAa8wh/pub?output=csv" value="">
+            <input type="text" id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv" value="">
             <button class="btn-load" id="loadBtn">📥 Load Requirements</button>
         </div>
 
@@ -86,6 +87,10 @@
                 </select>
             </div>
             <div class="control-group">
+                <label>📉 Shrinkage <span class="shrinkage-badge">Includes absenteeism, breaks, training</span></label>
+                <input type="number" id="shrinkage" value="10" step="1" min="0" max="50"> %
+            </div>
+            <div class="control-group">
                 <button class="btn-calc" id="calculateBtn">📊 Calculate</button>
             </div>
         </div>
@@ -113,7 +118,7 @@
         </div>
 
         <div class="footer">
-            <p>Update Google Sheet weekly/monthly | Calculator automatically uses latest data | Format must match client's table</p>
+            <p>Update Google Sheet weekly/monthly | Calculator automatically uses latest data | Shrinkage includes absenteeism, breaks, and training</p>
         </div>
     </div>
 
@@ -141,7 +146,6 @@
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const csvText = await response.text();
                 
-                // Parse CSV
                 const rows = csvText.split(/\r?\n/).filter(row => row.trim() !== '');
                 const parsedRows = rows.map(row => {
                     const matches = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
@@ -151,14 +155,9 @@
                 
                 if (parsedRows.length < 3) throw new Error('Not enough data in sheet');
                 
-                // Row 0: Dates (first cell is "Date", then dates)
-                // Row 1: Day names (first cell is "Required", then Mon, Tue, etc.)
-                // Row 2+: Time slots and numbers
-                
                 const dateRow = parsedRows[0];
                 const dayRow = parsedRows[1];
                 
-                // Get days (from column 1 onwards)
                 days = [];
                 dayShort = [];
                 for (let i = 1; i < dayRow.length; i++) {
@@ -170,13 +169,11 @@
                 
                 console.log('Days found:', days);
                 
-                // Initialize requirement data
                 requirementData = {};
                 days.forEach(day => {
                     requirementData[day] = [];
                 });
                 
-                // Parse time slots and numbers
                 timeSlots = [];
                 for (let i = 2; i < parsedRows.length; i++) {
                     const row = parsedRows[i];
@@ -218,6 +215,7 @@
             const shiftHours = parseFloat(document.getElementById('shiftHours').value);
             const daysOffType = document.getElementById('daysOff').value;
             const specificDays = document.getElementById('specificDaysOff').value;
+            const shrinkagePercent = parseFloat(document.getElementById('shrinkage').value) || 0;
             
             let workingDays = 7 - parseInt(daysOffType);
             let dayMultipliers = {};
@@ -258,10 +256,19 @@
                 }
             });
             
+            // Apply shrinkage factor
+            // Shrinkage means X% of agents are not available, so we need more agents
+            // Formula: Required Agents = Base Agents / (1 - Shrinkage%)
+            const shrinkageFactor = 1 - (shrinkagePercent / 100);
+            
             const availableHoursPerAgentPerWeek = shiftHours * workingDays;
-            const agentsNeeded = Math.ceil(totalRequiredHours / availableHoursPerAgentPerWeek);
-            const agentsNeededByPeak = Math.ceil(peakRequirement * (7 / workingDays));
-            const recommended = Math.max(agentsNeeded, agentsNeededByPeak);
+            let agentsNeeded = Math.ceil(totalRequiredHours / availableHoursPerAgentPerWeek);
+            let agentsNeededByPeak = Math.ceil(peakRequirement * (7 / workingDays));
+            
+            // Apply shrinkage to both calculations
+            let agentsNeededWithShrinkage = Math.ceil(agentsNeeded / shrinkageFactor);
+            let agentsNeededByPeakWithShrinkage = Math.ceil(agentsNeededByPeak / shrinkageFactor);
+            let recommendedWithShrinkage = Math.max(agentsNeededWithShrinkage, agentsNeededByPeakWithShrinkage);
             
             // Update KPI cards
             document.getElementById('kpiGrid').innerHTML = `
@@ -273,17 +280,21 @@
             
             document.getElementById('summaryText').innerHTML = `
                 <div style="display: flex; gap: 30px; flex-wrap: wrap; margin-bottom: 20px;">
-                    <div><span style="font-size: 3rem; font-weight: 700; color: #A05AFF;">${agentsNeeded}</span><br>Agents Needed (by total hours)</div>
-                    <div><span style="font-size: 3rem; font-weight: 700; color: #1BCFB4;">${agentsNeededByPeak}</span><br>Agents Needed (by peak coverage)</div>
-                    <div><span style="font-size: 2rem;">🎯 <strong>${recommended}</strong> agents recommended</span></div>
+                    <div><span style="font-size: 3rem; font-weight: 700; color: #A05AFF;">${agentsNeededWithShrinkage}</span><br>Agents Needed (with ${shrinkagePercent}% shrinkage)</div>
+                    <div><span style="font-size: 3rem; font-weight: 700; color: #1BCFB4;">${agentsNeededByPeakWithShrinkage}</span><br>Agents Needed (by peak + shrinkage)</div>
+                    <div><span style="font-size: 2rem;">🎯 <strong>${recommendedWithShrinkage}</strong> agents recommended</span></div>
                 </div>
                 <div style="padding: 15px; background: #F5F7FA; border-radius: 16px;">
                     <strong>📌 Calculation Details:</strong><br>
                     • Total required man-hours per week: ${totalRequiredHours.toFixed(0)} hours<br>
                     • Each agent works ${shiftHours} hours/day × ${workingDays} days = ${availableHoursPerAgentPerWeek} hours/week<br>
-                    • Agents needed (hours method): ${totalRequiredHours.toFixed(0)} ÷ ${availableHoursPerAgentPerWeek} = ${agentsNeeded}<br>
+                    • Base agents needed (hours method): ${agentsNeeded}<br>
+                    • Base agents needed (peak method): ${agentsNeededByPeak}<br>
+                    <span style="background: #FEF3C7; display: inline-block; padding: 5px 10px; border-radius: 8px; margin-top: 8px;">
+                        📉 Shrinkage (${shrinkagePercent}%): ${agentsNeeded} ÷ ${shrinkageFactor.toFixed(2)} = ${agentsNeededWithShrinkage} agents
+                    </span><br>
                     • Peak requirement: ${peakRequirement} agents needed at peak hour<br>
-                    • Recommended: ${recommended} agents to cover both total hours and peak demand
+                    • Recommended: ${recommendedWithShrinkage} agents to cover total hours, peak demand, and shrinkage
                 </div>
             `;
             
@@ -366,9 +377,7 @@
         document.getElementById('loadBtn').addEventListener('click', loadRequirements);
         document.getElementById('calculateBtn').addEventListener('click', calculate);
         
-        // Load sample data on page load for demo
         window.onload = function() {
-            // You'll replace this with your actual published CSV URL
             document.getElementById('sheetUrl').value = '';
         };
     </script>
